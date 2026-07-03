@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bird Species Identifier</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fc;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div id="app" class="w-full max-w-2xl bg-white shadow-2xl rounded-xl p-6 md:p-10 border border-gray-100">
+        <h1 class="text-3xl font-extrabold text-gray-800 mb-2 text-center">
+            Bird Species Identifier
+        </h1>
+        <p class="text-center text-gray-500 mb-8">
+            Upload an image of a bird, and AI will identify the species.
+        </p>
+
+        <!-- Image Upload and Controls -->
+        <div class="space-y-6">
+            <div class="flex flex-col items-center justify-center border-2 border-dashed border-sky-300 rounded-lg p-6 hover:border-sky-500 transition duration-300">
+                <input type="file" id="image-upload" accept="image/*" class="hidden" onchange="previewImage()">
+                <label for="image-upload" class="cursor-pointer text-sky-600 font-semibold hover:text-sky-700 transition duration-300">
+                    <svg class="w-10 h-10 mx-auto mb-2 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <span id="upload-label">Click to upload bird image</span>
+                </label>
+            </div>
+            
+            <div id="image-preview-container" class="hidden bg-gray-50 p-4 rounded-lg shadow-inner">
+                <h3 class="font-semibold text-gray-700 mb-3">Uploaded Image:</h3>
+                <img id="image-preview" class="w-full max-h-96 object-contain rounded-lg shadow-md mb-4" src="#" alt="Image Preview">
+                <button onclick="classifyBird()" id="classify-btn" disabled class="w-full py-3 bg-sky-600 text-white font-bold rounded-lg shadow-md hover:bg-sky-700 transition duration-300 disabled:opacity-50">
+                    Identify Species
+                </button>
+            </div>
+        </div>
+
+        <!-- Result Area -->
+        <div id="result-container" class="mt-8 pt-6 border-t border-gray-200">
+            <div id="loading-spinner" class="hidden text-center">
+                <div class="animate-spin inline-block w-8 h-8 border-4 border-sky-500 border-t-transparent rounded-full" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p class="mt-3 text-gray-600">Identifying bird species...</p>
+            </div>
+
+            <div id="identification-result" class="hidden bg-sky-50 p-6 rounded-xl border border-sky-200">
+                <h3 class="text-2xl font-bold text-sky-800 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.01 12.01 0 002.93 12c.316 2.373 1.25 4.337 2.766 5.854.91 1.05 2.053 1.83 3.324 2.22A4 4 0 0112 21a4 4 0 013-1.072 6.001 6.001 0 003.324-2.22c1.516-1.517 2.45-3.481 2.766-5.854a12.01 12.01 0 00-.067-5.04z"></path></svg>
+                    Identification Complete
+                </h3>
+                <p class="text-lg mb-2"><span class="font-semibold text-gray-700">Species:</span> <span id="result-species" class="text-sky-600 font-bold"></span></p>
+                <p class="text-lg mb-2"><span class="font-semibold text-gray-700">Confidence:</span> <span id="result-confidence" class="font-medium"></span></p>
+                <p class="text-lg"><span class="font-semibold text-gray-700">Justification:</span> <span id="result-description" class="italic text-gray-600"></span></p>
+            </div>
+            
+            <div id="error-message" class="hidden bg-red-100 p-4 rounded-lg text-red-700 border border-red-300">
+                <p class="font-bold">Error:</p>
+                <p id="error-text"></p>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="module">
+        // Helper function to convert the image file to a Base64 string for the API call
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]); // Get the base64 part
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // --- Core Application Logic ---
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'bird-species-identifier';
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+        const imageUpload = document.getElementById('image-upload');
+        const imagePreview = document.getElementById('image-preview');
+        const imagePreviewContainer = document.getElementById('image-preview-container');
+        const classifyBtn = document.getElementById('classify-btn');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const identificationResult = document.getElementById('identification-result');
+        const errorContainer = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const resultSpecies = document.getElementById('result-species');
+        const resultConfidence = document.getElementById('result-confidence');
+        const resultDescription = document.getElementById('result-description');
+        const uploadLabel = document.getElementById('upload-label');
+
+        // Handles the image upload preview and state
+        window.previewImage = function() {
+            const file = imageUpload.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreviewContainer.classList.remove('hidden');
+                    classifyBtn.disabled = false;
+                    uploadLabel.textContent = file.name;
+                    // Clear previous results
+                    identificationResult.classList.add('hidden');
+                    errorContainer.classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+            } else {
+                imagePreview.src = '#';
+                imagePreviewContainer.classList.add('hidden');
+                classifyBtn.disabled = true;
+                uploadLabel.textContent = 'Click to upload bird image';
+            }
+        }
+
+        // Exponential backoff utility for robust API calls
+        async function fetchWithRetry(url, options, maxRetries = 3) {
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return response;
+                    } else if (response.status === 429 && attempt < maxRetries - 1) {
+                        // Rate limit hit, wait with exponential backoff
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        // Retry loop continues
+                    } else {
+                        throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+                    }
+                } catch (error) {
+                    if (attempt === maxRetries - 1) {
+                        throw error;
+                    }
+                    // For other errors, log and retry (optional logging removed per instruction)
+                }
+            }
+        }
+
+        // Main classification function
+        window.classifyBird = async function() {
+            const file = imageUpload.files[0];
+            if (!file) {
+                alert('Please upload an image first.');
+                return;
+            }
+
+            // Hide previous results and show loading spinner
+            identificationResult.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+            classifyBtn.disabled = true;
+
+            try {
+                // 1. Convert image to Base64
+                const base64ImageData = await fileToBase64(file);
+
+                // 2. Define the system instruction for JSON output
+                const systemPrompt = "You are a highly accurate bird species identification specialist. When presented with an image of a bird, your only task is to identify the single most likely species and provide a short justification. Respond ONLY with a single JSON object in the following format: {\"species\": \"[Species Name]\", \"confidence\": \"[High/Medium/Low]\", \"description\": \"[1-2 sentence justification for the identification.]\"}. Do not include any other text, greetings, or markdown outside of the JSON block.";
+                const userQuery = "Identify the species of the bird in the image.";
+
+                // 3. Construct the API payload
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: userQuery },
+                                {
+                                    inlineData: {
+                                        mimeType: file.type,
+                                        data: base64ImageData
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                "species": { "type": "STRING", "description": "The common name of the identified bird species." },
+                                "confidence": { "type": "STRING", "description": "The confidence level (High, Medium, or Low)." },
+                                "description": { "type": "STRING", "description": "A brief 1-2 sentence reason for the identification." }
+                            },
+                            required: ["species", "confidence", "description"]
+                        }
+                    }
+                };
+                
+                // 4. Make the API call
+                const response = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error?.message || 'Failed to classify image.');
+                }
+                
+                const candidate = result.candidates?.[0];
+                const jsonText = candidate?.content?.parts?.[0]?.text;
+
+                if (!jsonText) {
+                    throw new Error("API response was valid but did not contain the expected JSON text.");
+                }
+
+                // 5. Process the structured response
+                const identification = JSON.parse(jsonText);
+
+                // 6. Update the UI with results
+                resultSpecies.textContent = identification.species || 'Unknown';
+                resultDescription.textContent = identification.description || 'No detailed justification provided.';
+                resultConfidence.textContent = identification.confidence || 'N/A';
+                
+                // Style confidence text
+                resultConfidence.classList.remove('text-green-600', 'text-yellow-600', 'text-red-600');
+                if (identification.confidence === 'High') {
+                    resultConfidence.classList.add('text-green-600');
+                } else if (identification.confidence === 'Medium') {
+                    resultConfidence.classList.add('text-yellow-600');
+                } else {
+                    resultConfidence.classList.add('text-red-600');
+                }
+
+                identificationResult.classList.remove('hidden');
+
+            } catch (error) {
+                // Handle errors
+                errorText.textContent = `Error during identification: ${error.message}`;
+                errorContainer.classList.remove('hidden');
+                console.error("Identification error:", error);
+            } finally {
+                // Always hide loading spinner and re-enable button
+                loadingSpinner.classList.add('hidden');
+                classifyBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
